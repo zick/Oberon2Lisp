@@ -30,6 +30,32 @@ TYPE
   SubrCdr = POINTER TO SubrCdrDesc;
   SubrConsDesc = RECORD (SubrFnDesc) END;
   SubrCons = POINTER TO SubrConsDesc;
+  SubrEqDesc = RECORD (SubrFnDesc) END;
+  SubrEq = POINTER TO SubrEqDesc;
+  SubrAtomDesc = RECORD (SubrFnDesc) END;
+  SubrAtom = POINTER TO SubrAtomDesc;
+  SubrNumberpDesc = RECORD (SubrFnDesc) END;
+  SubrNumberp = POINTER TO SubrNumberpDesc;
+  SubrSymbolpDesc = RECORD (SubrFnDesc) END;
+  SubrSymbolp = POINTER TO SubrSymbolpDesc;
+
+  CalcDesc = RECORD END;
+  Calc = POINTER TO CalcDesc;
+  CalcAddDesc = RECORD (CalcDesc) END;
+  CalcAdd = POINTER TO CalcAddDesc;
+  CalcMulDesc = RECORD (CalcDesc) END;
+  CalcMul = POINTER TO CalcMulDesc;
+  CalcSubDesc = RECORD (CalcDesc) END;
+  CalcSub = POINTER TO CalcSubDesc;
+  CalcDivDesc = RECORD (CalcDesc) END;
+  CalcDiv = POINTER TO CalcDivDesc;
+  CalcModDesc = RECORD (CalcDesc) END;
+  CalcMod = POINTER TO CalcModDesc;
+  SubrArithDesc = RECORD (SubrFnDesc) calc: Calc END;
+  SubrAddOrMulDesc = RECORD (SubrArithDesc) initVal: INTEGER END;
+  SubrAddOrMul = POINTER TO SubrAddOrMulDesc;
+  SubrSubOrDivOrModDesc = RECORD (SubrArithDesc) END;
+  SubrSubOrDivOrMod = POINTER TO SubrSubOrDivOrModDesc;
 
 VAR
   kLPar: CHAR;
@@ -475,12 +501,150 @@ BEGIN
   RETURN MakeCons(SafeCar(args), SafeCar(SafeCdr(args)))
 END Call;
 
+PROCEDURE (f: SubrEq) Call(args: LObj): LObj;
+VAR
+  x: LObj;
+  y: LObj;
+BEGIN
+  x := SafeCar(args);
+  y := SafeCar(SafeCdr(args));
+  WITH
+    x: Num DO
+      WITH
+        y: Num DO
+          IF x.data = y.data THEN
+            RETURN symT
+          ELSE
+            RETURN kNil
+          END
+      ELSE
+        RETURN kNil
+      END
+  ELSE
+    IF x = y THEN
+      RETURN symT
+    ELSE
+      RETURN kNil
+    END
+  END
+END Call;
+
+PROCEDURE (f: SubrAtom) Call(args: LObj): LObj;
+BEGIN
+  IF SafeCar(args) IS Cons THEN
+    RETURN kNil
+  ELSE
+    RETURN symT
+  END
+END Call;
+
+PROCEDURE (f: SubrNumberp) Call(args: LObj): LObj;
+BEGIN
+  IF SafeCar(args) IS Num THEN
+    RETURN symT
+  ELSE
+    RETURN kNil
+  END
+END Call;
+
+PROCEDURE (f: SubrSymbolp) Call(args: LObj): LObj;
+BEGIN
+  IF SafeCar(args) IS Sym THEN
+    RETURN symT
+  ELSE
+    RETURN kNil
+  END
+END Call;
+
+PROCEDURE (f: Calc) Call(x, y: INTEGER): INTEGER;
+BEGIN
+  RETURN 0;  (* dummy *)
+END Call;
+
+PROCEDURE (f: CalcAdd) Call(x, y: INTEGER): INTEGER;
+BEGIN
+  RETURN x + y;
+END Call;
+
+PROCEDURE (f: CalcMul) Call(x, y: INTEGER): INTEGER;
+BEGIN
+  RETURN x * y;
+END Call;
+
+PROCEDURE (f: CalcSub) Call(x, y: INTEGER): INTEGER;
+BEGIN
+  RETURN x - y;
+END Call;
+
+PROCEDURE (f: CalcDiv) Call(x, y: INTEGER): INTEGER;
+BEGIN
+  RETURN x DIV y;
+END Call;
+
+PROCEDURE (f: CalcMod) Call(x, y: INTEGER): INTEGER;
+BEGIN
+  RETURN x MOD y;
+END Call;
+
+PROCEDURE (f: SubrAddOrMul) Call(args: LObj): LObj;
+VAR
+  ret: INTEGER;
+  elm: LObj;
+BEGIN
+  ret := f.initVal;
+  WHILE args IS Cons DO
+    elm := SafeCar(args);
+    WITH
+      elm: Num DO
+        ret := f.calc.Call(ret, elm.data);
+        args := SafeCdr(args)
+    ELSE
+      RETURN MakeError("wrong type")
+    END
+  END;
+  RETURN MakeNum(ret)
+END Call;
+
+PROCEDURE (f: SubrSubOrDivOrMod) Call(args: LObj): LObj;
+VAR
+  x: LObj;
+  y: LObj;
+BEGIN
+  x := SafeCar(args);
+  y := SafeCar(SafeCdr(args));
+  WITH
+    x: Num DO
+      WITH
+        y: Num DO
+          RETURN MakeNum(f.calc.Call(x.data, y.data))
+      ELSE
+        RETURN MakeError("wrong type")
+      END
+  ELSE
+    RETURN MakeError("wrong type")
+  END
+END Call;
+
 PROCEDURE Init();
 VAR
   nil: Nil;
   subrCar: SubrCar;
   subrCdr: SubrCdr;
   subrCons: SubrCons;
+  subrEq: SubrEq;
+  subrAtom: SubrAtom;
+  subrNumberp: SubrNumberp;
+  subrSymbolp: SubrSymbolp;
+  calcAdd: CalcAdd;
+  calcMul: CalcMul;
+  calcSub: CalcSub;
+  calcDiv: CalcDiv;
+  calcMod: CalcMod;
+  subrAdd: SubrAddOrMul;
+  subrMul: SubrAddOrMul;
+  subrSub: SubrSubOrDivOrMod;
+  subrDiv: SubrSubOrDivOrMod;
+  subrMod: SubrSubOrDivOrMod;
 BEGIN
   kLPar := "(";
   kRPar := ")";
@@ -505,6 +669,38 @@ BEGIN
   AddToEnv(MakeSym("cdr"), MakeSubr(subrCdr), gEnv);
   NEW(subrCons);
   AddToEnv(MakeSym("cons"), MakeSubr(subrCons), gEnv);
+  NEW(subrEq);
+  AddToEnv(MakeSym("eq"), MakeSubr(subrEq), gEnv);
+  NEW(subrAtom);
+  AddToEnv(MakeSym("atom"), MakeSubr(subrAtom), gEnv);
+  NEW(subrNumberp);
+  AddToEnv(MakeSym("numberp"), MakeSubr(subrNumberp), gEnv);
+  NEW(subrSymbolp);
+  AddToEnv(MakeSym("symbolp"), MakeSubr(subrSymbolp), gEnv);
+
+  NEW(calcAdd);
+  NEW(calcMul);
+  NEW(calcSub);
+  NEW(calcDiv);
+  NEW(calcMod);
+
+  NEW(subrAdd);
+  subrAdd.initVal := 0;
+  subrAdd.calc := calcAdd;
+  AddToEnv(MakeSym("+"), MakeSubr(subrAdd), gEnv);
+  NEW(subrMul);
+  subrMul.initVal := 1;
+  subrMul.calc := calcMul;
+  AddToEnv(MakeSym("*"), MakeSubr(subrMul), gEnv);
+  NEW(subrSub);
+  subrSub.calc := calcSub;
+  AddToEnv(MakeSym("-"), MakeSubr(subrSub), gEnv);
+  NEW(subrDiv);
+  subrDiv.calc := calcDiv;
+  AddToEnv(MakeSym("/"), MakeSubr(subrDiv), gEnv);
+  NEW(subrMod);
+  subrMod.calc := calcMod;
+  AddToEnv(MakeSym("mod"), MakeSubr(subrMod), gEnv);
 END Init;
 
 PROCEDURE Main();
