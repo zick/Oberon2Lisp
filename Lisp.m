@@ -24,6 +24,7 @@ VAR
   kNil: LObj;
   symTable: ARRAY 65536 OF Sym;
   symTableSize: INTEGER;
+  symQuote: LObj;
 
 PROCEDURE MakeNum(n: INTEGER): LObj;
 VAR
@@ -93,6 +94,26 @@ BEGIN
   END
 END SafeCdr;
 
+PROCEDURE Nreverse(lst: LObj): LObj;
+VAR
+  ret: LObj;
+  tmp: LObj;
+BEGIN
+  ret := kNil;
+  LOOP
+    WITH
+      lst: Cons DO
+        tmp := lst.cdr;
+        lst.cdr := ret;
+        ret := lst;
+    ELSE
+      EXIT
+    END;
+    lst := tmp  (* This statement can't be in WITH due to type checking. *)
+  END;
+  RETURN ret;
+END Nreverse;
+
 PROCEDURE IsSpace(c: CHAR): BOOLEAN;
 BEGIN
   IF (c = CHR(9)) OR (c = CHR(10)) OR (c = CHR(13)) OR (c = CHR(32)) THEN
@@ -152,6 +173,9 @@ BEGIN
 END ReadAtom;
 
 PROCEDURE Read(str: ARRAY OF CHAR; i: INTEGER; VAR obj: LObj): INTEGER;
+VAR
+  j: INTEGER;
+  elm: LObj;
 BEGIN
   i := SkipSpaces(str, i);
   IF i >= Strings.Length(str) THEN
@@ -161,31 +185,82 @@ BEGIN
     obj := MakeError("invalid syntax");
     RETURN Strings.Length(str)
   ELSIF str[i] = kLPar THEN
-    obj := MakeError("noimpl");
-    RETURN Strings.Length(str)
+    RETURN ReadList(str, i + 1, obj)
   ELSIF str[i] = kQuote THEN
-    obj := MakeError("noimpl");
-    RETURN Strings.Length(str)
+    j := Read(str, i + 1, elm);
+    obj := MakeCons(symQuote, MakeCons(elm, kNil));
+    RETURN j
   ELSE
     RETURN ReadAtom(str, i, obj)
   END;
 END Read;
 
+PROCEDURE ReadList(str: ARRAY OF CHAR; i: INTEGER; VAR obj: LObj): INTEGER;
+VAR
+  elm: LObj;
+BEGIN
+  obj := kNil;
+  LOOP
+    i := SkipSpaces(str, i);
+    IF i >= Strings.Length(str) THEN
+      obj := MakeError("unfinished parenthesis");
+      RETURN i
+    ELSIF str[i] = kRPar THEN
+      EXIT;
+    END;
+    i := Read(str, i, elm);
+    IF elm IS Error THEN
+      obj := elm;
+      RETURN i
+    END;
+    obj := MakeCons(elm, obj);
+  END;
+  obj := Nreverse(obj);
+  RETURN i + 1;
+END ReadList;
+
 PROCEDURE PrintObj(obj: LObj; VAR str: ARRAY OF CHAR);
+VAR
+  buf: ARRAY 32 OF CHAR;
 BEGIN
   WITH
     obj: Nil DO
-      str := "nil"
+      Strings.Append("nil", str);
   | obj: Num DO
-      Conv.ConvInt(obj.data, str)
+      Conv.ConvInt(obj.data, buf);
+      Strings.Append(buf, str)
   | obj: Sym DO
       Strings.Append(obj.data, str)
   | obj: Error DO
       Strings.Append("<error: ", str);
       Strings.Append(obj.data, str);
       Strings.Append(">", str)
+  | obj: Cons DO
+      PrintList(obj, str);
   END
 END PrintObj;
+
+PROCEDURE PrintList(obj: LObj; VAR str: ARRAY OF CHAR);
+VAR
+  first: BOOLEAN;
+BEGIN
+  first := TRUE;
+  Strings.Append("(", str);
+  WHILE obj IS Cons DO
+    IF first THEN
+      first := FALSE
+    ELSE
+      Strings.Append(" ", str);
+    END;
+    PrintObj(SafeCar(obj), str);
+    obj := SafeCdr(obj);
+  END;
+  IF ~(obj = kNil) THEN
+    Strings.Append(" . ", str);
+    PrintObj(obj, str)
+  END;
+  Strings.Append(")", str)
+END PrintList;
 
 PROCEDURE Init();
 VAR
@@ -198,7 +273,8 @@ BEGIN
   NEW(nil);
   kNil := nil;
 
-  symTableSize := 0
+  symTableSize := 0;
+  symQuote := MakeSym("quote")
 END Init;
 
 PROCEDURE Main();
