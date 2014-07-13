@@ -6,16 +6,28 @@ TYPE
   LObjDesc = RECORD END;
   LObj = POINTER TO LObjDesc;
 
+  SubrFnDesc = RECORD END;
+  SubrFn = POINTER TO SubrFnDesc;
+
   NilDesc = RECORD (LObjDesc) END;
   NumDesc = RECORD (LObjDesc) data: INTEGER END;
   SymDesc = RECORD (LObjDesc) data: ARRAY 256 OF CHAR END;
   ErrorDesc = RECORD (LObjDesc) data: ARRAY 256 OF CHAR END;
   ConsDesc = RECORD (LObjDesc) car, cdr: LObj END;
+  SubrDesc = RECORD (LObjDesc) fn: SubrFn END;
   Nil = POINTER TO NilDesc;
   Num = POINTER TO NumDesc;
   Sym = POINTER TO SymDesc;
   Error = POINTER TO ErrorDesc;
   Cons = POINTER TO ConsDesc;
+  Subr = POINTER TO SubrDesc;
+
+  SubrCarDesc = RECORD (SubrFnDesc) END;
+  SubrCar = POINTER TO SubrCarDesc;
+  SubrCdrDesc = RECORD (SubrFnDesc) END;
+  SubrCdr = POINTER TO SubrCdrDesc;
+  SubrConsDesc = RECORD (SubrFnDesc) END;
+  SubrCons = POINTER TO SubrConsDesc;
 
 VAR
   kLPar: CHAR;
@@ -27,6 +39,7 @@ VAR
   symTableSize: INTEGER;
   symT: LObj;
   symQuote: LObj;
+  symIf: LObj;
 
 PROCEDURE MakeNum(n: INTEGER): LObj;
 VAR
@@ -77,6 +90,15 @@ BEGIN
   cons.cdr := d;
   RETURN cons
 END MakeCons;
+
+PROCEDURE MakeSubr(fn: SubrFn): LObj;
+VAR
+  subr: Subr;
+BEGIN
+  NEW(subr);
+  subr.fn := fn;
+  RETURN subr
+END MakeSubr;
 
 PROCEDURE SafeCar(obj: LObj): LObj;
 BEGIN
@@ -293,6 +315,9 @@ PROCEDURE Eval(obj, env: LObj): LObj;
 VAR
   bind: LObj;
   buf: ARRAY 256 OF CHAR;
+  op: LObj;
+  args: LObj;
+  c: LObj;
 BEGIN
   IF (obj IS Nil) OR (obj IS Num) OR (obj IS Error) THEN
     RETURN obj
@@ -307,12 +332,85 @@ BEGIN
       RETURN MakeError(buf)
     END
   END;
-  RETURN MakeError("noimpl")
+  op := SafeCar(obj);
+  args := SafeCdr(obj);
+  IF op = symQuote THEN
+    RETURN SafeCar(args)
+  ELSIF op = symIf THEN
+    c := Eval(SafeCar(args), env);
+    IF c IS Error THEN
+      RETURN c
+    ELSIF c = kNil THEN
+      RETURN Eval(SafeCar(SafeCdr(SafeCdr(args))), env)
+    ELSE
+      RETURN Eval(SafeCar(SafeCdr(args)), env)
+    END
+  END;
+  RETURN Apply(Eval(op, env), Evlis(args, env))
 END Eval;
+
+PROCEDURE Evlis(lst, env: LObj): LObj;
+VAR
+  ret: LObj;
+  elm: LObj;
+BEGIN
+  ret := kNil;
+  WHILE lst IS Cons DO
+    elm := Eval(SafeCar(lst), env);
+    IF elm IS Error THEN
+      RETURN elm
+    END;
+    ret := MakeCons(elm, ret);
+    lst := SafeCdr(lst)
+  END;
+  RETURN Nreverse(ret)
+END Evlis;
+
+PROCEDURE Apply(fn, args: LObj): LObj;
+VAR
+  buf: ARRAY 256 OF CHAR;
+BEGIN
+  IF fn IS Error THEN
+    RETURN fn
+  ELSIF args IS Error THEN
+    RETURN args
+  END;
+  WITH
+    fn: Subr DO
+      RETURN fn.fn.Call(args)
+  ELSE
+    PrintObj(fn, buf);
+    Strings.Append(" is not function", buf);
+    RETURN MakeError(buf)
+  END
+END Apply;
+
+PROCEDURE (f: SubrFn) Call(args: LObj): LObj;
+BEGIN
+  RETURN MakeError("unknown subr")
+END Call;
+
+PROCEDURE (f: SubrCar) Call(args: LObj): LObj;
+BEGIN
+  RETURN SafeCar(SafeCar(args))
+END Call;
+
+PROCEDURE (f: SubrCdr) Call(args: LObj): LObj;
+BEGIN
+  RETURN SafeCdr(SafeCar(args))
+END Call;
+
+PROCEDURE (f: SubrCons) Call(args: LObj): LObj;
+BEGIN
+  RETURN MakeCons(SafeCar(args), SafeCar(SafeCdr(args)))
+END Call;
 
 PROCEDURE Init();
 VAR
   nil: Nil;
+  subrCar: SubrCar;
+  subrCdr: SubrCdr;
+  subrCons: SubrCons;
 BEGIN
   kLPar := "(";
   kRPar := ")";
@@ -324,9 +422,16 @@ BEGIN
   symTableSize := 0;
   symT := MakeSym("t");
   symQuote := MakeSym("quote");
+  symIf := MakeSym("if");
 
   gEnv := MakeCons(kNil, kNil);
   AddToEnv(symT, symT, gEnv);
+  NEW(subrCar);
+  AddToEnv(MakeSym("car"), MakeSubr(subrCar), gEnv);
+  NEW(subrCdr);
+  AddToEnv(MakeSym("cdr"), MakeSubr(subrCdr), gEnv);
+  NEW(subrCons);
+  AddToEnv(MakeSym("cons"), MakeSubr(subrCons), gEnv);
 END Init;
 
 PROCEDURE Main();
