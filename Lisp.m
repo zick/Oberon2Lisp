@@ -22,8 +22,10 @@ VAR
   kRPar: CHAR;
   kQuote: CHAR;
   kNil: LObj;
+  gEnv: LObj;
   symTable: ARRAY 65536 OF Sym;
   symTableSize: INTEGER;
+  symT: LObj;
   symQuote: LObj;
 
 PROCEDURE MakeNum(n: INTEGER): LObj;
@@ -262,6 +264,52 @@ BEGIN
   Strings.Append(")", str)
 END PrintList;
 
+PROCEDURE FindVar(sym, env: LObj): LObj;
+VAR
+  alist: LObj;
+BEGIN
+  WHILE env IS Cons DO
+    alist := SafeCar(env);
+    WHILE alist IS Cons DO
+      IF SafeCar(SafeCar(alist)) = sym THEN
+        RETURN SafeCar(alist)
+      END;
+      alist := SafeCdr(alist)
+    END;
+    env := SafeCdr(env)
+  END;
+  RETURN kNil
+END FindVar;
+
+PROCEDURE AddToEnv(sym, val, env: LObj);
+BEGIN
+  WITH
+    env: Cons DO
+      env.car := MakeCons(MakeCons(sym, val), env.car)
+  END
+END AddToEnv;
+
+PROCEDURE Eval(obj, env: LObj): LObj;
+VAR
+  bind: LObj;
+  buf: ARRAY 256 OF CHAR;
+BEGIN
+  IF (obj IS Nil) OR (obj IS Num) OR (obj IS Error) THEN
+    RETURN obj
+  ELSIF obj IS Sym THEN
+    bind := FindVar(obj, env);
+    WITH
+      bind: Cons DO
+        RETURN bind.cdr
+    ELSE
+      PrintObj(obj, buf);
+      Strings.Append(" has no value", buf);
+      RETURN MakeError(buf)
+    END
+  END;
+  RETURN MakeError("noimpl")
+END Eval;
+
 PROCEDURE Init();
 VAR
   nil: Nil;
@@ -274,7 +322,11 @@ BEGIN
   kNil := nil;
 
   symTableSize := 0;
-  symQuote := MakeSym("quote")
+  symT := MakeSym("t");
+  symQuote := MakeSym("quote");
+
+  gEnv := MakeCons(kNil, kNil);
+  AddToEnv(symT, symT, gEnv);
 END Init;
 
 PROCEDURE Main();
@@ -289,6 +341,7 @@ BEGIN
     In.Line(line);
     IF Strings.Length(line) = 0 THEN EXIT END;
     i := Read(line, 0, obj);
+    obj := Eval(obj, gEnv);
     line := "";
     PrintObj(obj, line);
     Out.String(line);
