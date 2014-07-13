@@ -15,12 +15,14 @@ TYPE
   ErrorDesc = RECORD (LObjDesc) data: ARRAY 256 OF CHAR END;
   ConsDesc = RECORD (LObjDesc) car, cdr: LObj END;
   SubrDesc = RECORD (LObjDesc) fn: SubrFn END;
+  ExprDesc = RECORD (LObjDesc) args, body, env: LObj END;
   Nil = POINTER TO NilDesc;
   Num = POINTER TO NumDesc;
   Sym = POINTER TO SymDesc;
   Error = POINTER TO ErrorDesc;
   Cons = POINTER TO ConsDesc;
   Subr = POINTER TO SubrDesc;
+  Expr = POINTER TO ExprDesc;
 
   SubrCarDesc = RECORD (SubrFnDesc) END;
   SubrCar = POINTER TO SubrCarDesc;
@@ -40,6 +42,7 @@ VAR
   symT: LObj;
   symQuote: LObj;
   symIf: LObj;
+  symLambda: LObj;
 
 PROCEDURE MakeNum(n: INTEGER): LObj;
 VAR
@@ -100,6 +103,17 @@ BEGIN
   RETURN subr
 END MakeSubr;
 
+PROCEDURE MakeExpr(args, env: LObj): LObj;
+VAR
+  expr: Expr;
+BEGIN
+  NEW(expr);
+  expr.args := SafeCar(args);
+  expr.body := SafeCdr(args);
+  expr.env := env;
+  RETURN expr
+END MakeExpr;
+
 PROCEDURE SafeCar(obj: LObj): LObj;
 BEGIN
   WITH
@@ -137,6 +151,19 @@ BEGIN
   END;
   RETURN ret;
 END Nreverse;
+
+PROCEDURE Pairlis(lst1, lst2: LObj): LObj;
+VAR
+  ret: LObj;
+BEGIN
+  ret := kNil;
+  WHILE (lst1 IS Cons) & (lst2 IS Cons) DO
+    ret := MakeCons(MakeCons(SafeCar(lst1), SafeCar(lst2)), ret);
+    lst1 := SafeCdr(lst1);
+    lst2 := SafeCdr(lst2)
+  END;
+  RETURN Nreverse(ret)
+END Pairlis;
 
 PROCEDURE IsSpace(c: CHAR): BOOLEAN;
 BEGIN
@@ -261,6 +288,12 @@ BEGIN
       Strings.Append(">", str)
   | obj: Cons DO
       PrintList(obj, str);
+  | obj: Subr DO
+      Strings.Append("<subr>", str)
+  | obj: Expr DO
+      Strings.Append("<expr>", str)
+  ELSE
+    Strings.Append("<unknown>", str)
   END
 END PrintObj;
 
@@ -345,6 +378,8 @@ BEGIN
     ELSE
       RETURN Eval(SafeCar(SafeCdr(args)), env)
     END
+  ELSIF op = symLambda THEN
+    RETURN MakeExpr(args, env)
   END;
   RETURN Apply(Eval(op, env), Evlis(args, env))
 END Eval;
@@ -366,6 +401,18 @@ BEGIN
   RETURN Nreverse(ret)
 END Evlis;
 
+PROCEDURE Progn(body, env: LObj): LObj;
+VAR
+  ret: LObj;
+BEGIN
+  ret := kNil;
+  WHILE body IS Cons DO
+    ret := Eval(SafeCar(body), env);
+    body := SafeCdr(body)
+  END;
+  RETURN ret
+END Progn;
+
 PROCEDURE Apply(fn, args: LObj): LObj;
 VAR
   buf: ARRAY 256 OF CHAR;
@@ -378,6 +425,8 @@ BEGIN
   WITH
     fn: Subr DO
       RETURN fn.fn.Call(args)
+  | fn: Expr DO
+      RETURN Progn(fn.body, MakeCons(Pairlis(fn.args, args), fn.env))
   ELSE
     PrintObj(fn, buf);
     Strings.Append(" is not function", buf);
@@ -423,6 +472,7 @@ BEGIN
   symT := MakeSym("t");
   symQuote := MakeSym("quote");
   symIf := MakeSym("if");
+  symLambda := MakeSym("lambda");
 
   gEnv := MakeCons(kNil, kNil);
   AddToEnv(symT, symT, gEnv);
