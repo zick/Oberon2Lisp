@@ -43,6 +43,7 @@ VAR
   symQuote: LObj;
   symIf: LObj;
   symLambda: LObj;
+  symDefun: LObj;
 
 PROCEDURE MakeNum(n: INTEGER): LObj;
 VAR
@@ -351,6 +352,8 @@ VAR
   op: LObj;
   args: LObj;
   c: LObj;
+  expr: LObj;
+  sym: LObj;
 BEGIN
   IF (obj IS Nil) OR (obj IS Num) OR (obj IS Error) THEN
     RETURN obj
@@ -380,6 +383,11 @@ BEGIN
     END
   ELSIF op = symLambda THEN
     RETURN MakeExpr(args, env)
+  ELSIF op = symDefun THEN
+    expr := MakeExpr(SafeCdr(args), env);
+    sym := SafeCar(args);
+    AddToEnv(sym, expr, gEnv);
+    RETURN sym
   END;
   RETURN Apply(Eval(op, env), Evlis(args, env))
 END Eval;
@@ -473,6 +481,7 @@ BEGIN
   symQuote := MakeSym("quote");
   symIf := MakeSym("if");
   symLambda := MakeSym("lambda");
+  symDefun := MakeSym("defun");
 
   gEnv := MakeCons(kNil, kNil);
   AddToEnv(symT, symT, gEnv);
