@@ -44,6 +44,7 @@ VAR
   symIf: LObj;
   symLambda: LObj;
   symDefun: LObj;
+  symSetq: LObj;
 
 PROCEDURE MakeNum(n: INTEGER): LObj;
 VAR
@@ -354,6 +355,7 @@ VAR
   c: LObj;
   expr: LObj;
   sym: LObj;
+  val: LObj;
 BEGIN
   IF (obj IS Nil) OR (obj IS Num) OR (obj IS Error) THEN
     RETURN obj
@@ -388,6 +390,17 @@ BEGIN
     sym := SafeCar(args);
     AddToEnv(sym, expr, gEnv);
     RETURN sym
+  ELSIF op = symSetq THEN
+    val := Eval(SafeCar(SafeCdr(args)), env);
+    sym := SafeCar(args);
+    bind := FindVar(sym, env);
+    WITH
+      bind: Cons DO
+        bind.cdr := val
+    ELSE
+      AddToEnv(sym, val, gEnv);
+    END;
+    RETURN val;
   END;
   RETURN Apply(Eval(op, env), Evlis(args, env))
 END Eval;
@@ -482,6 +495,7 @@ BEGIN
   symIf := MakeSym("if");
   symLambda := MakeSym("lambda");
   symDefun := MakeSym("defun");
+  symSetq := MakeSym("setq");
 
   gEnv := MakeCons(kNil, kNil);
   AddToEnv(symT, symT, gEnv);
